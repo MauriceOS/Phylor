@@ -60,7 +60,7 @@ Download the archive for your platform from
 
 Extract, place the binary on your `PATH`, then run `phylor init`.
 
-Releases are built automatically when a version tag is pushed (`v0.2.1`, etc.).
+Releases are built automatically when a version tag is pushed (`v0.2.3`, etc.).
 
 ### Build from source
 
