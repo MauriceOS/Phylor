@@ -232,10 +232,14 @@ impl Pipeline {
     }
 
     pub fn intercept(&self, path: PathBuf) -> anyhow::Result<()> {
-        if !is_skill_file(&path) {
+        if !is_watched_file(&path) {
             return Ok(());
         }
         if is_under_quarantine(&path) {
+            return Ok(());
+        }
+        if crate::fsutil::is_symlink(&path).unwrap_or(false) {
+            warn!(path = %path.display(), "skipping symlink");
             return Ok(());
         }
 
@@ -310,6 +314,21 @@ pub fn is_skill_file(path: &Path) -> bool {
             .map(|e| e.to_ascii_lowercase()),
         Some(ref e) if e == "md" || e == "mdc"
     )
+}
+
+pub fn is_mcp_config(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    name == "mcp.json"
+        || name == "claude_desktop_config.json"
+        || name.ends_with(".mcp.json")
+}
+
+pub fn is_watched_file(path: &Path) -> bool {
+    is_skill_file(path) || is_mcp_config(path)
 }
 
 fn is_under_quarantine(path: &Path) -> bool {

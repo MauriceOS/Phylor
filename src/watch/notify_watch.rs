@@ -1,4 +1,4 @@
-use crate::pipeline::{is_skill_file, Pipeline};
+use crate::pipeline::{is_watched_file, Pipeline};
 use notify::{Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -6,7 +6,11 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
-pub fn run_notify_daemon(pipeline: Arc<Pipeline>, watch_paths: Vec<PathBuf>, poll_ms: u64) -> anyhow::Result<()> {
+pub fn run_notify_daemon(
+    pipeline: Arc<Pipeline>,
+    watch_paths: Vec<PathBuf>,
+    poll_ms: u64,
+) -> anyhow::Result<()> {
     let (tx, rx) = mpsc::channel();
     let mut watcher = RecommendedWatcher::new(
         tx,
@@ -40,7 +44,7 @@ fn handle_event(event: Event, pipeline: &Pipeline) {
     }
 
     for path in event.paths {
-        if !is_skill_file(&path) || !path.is_file() {
+        if !is_watched_file(&path) || !path.is_file() {
             continue;
         }
         if let Err(e) = pipeline.intercept(path.clone()) {

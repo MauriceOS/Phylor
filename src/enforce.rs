@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::fsutil;
 use crate::scan::ScanResult;
 use std::fs;
 use std::io;
@@ -22,6 +23,8 @@ impl Enforcer {
         target: &Path,
         result: &ScanResult,
     ) -> io::Result<PathBuf> {
+        fsutil::require_regular_file(target)?;
+
         let stamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -33,9 +36,39 @@ impl Enforcer {
             .unwrap_or_else(|| "unknown.skill".into());
         let dest = self.quarantine_dir.join(format!("{stamp}_{name}"));
 
+        // Re-check immediately before mutation.
+        fsutil::require_regular_file(target)?;
         fs::rename(target, &dest)?;
+
+        // If something recreates a symlink at the original path, refuse to write.
+        if target.exists() {
+            if fsutil::is_symlink(target).unwrap_or(true) {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    format!(
+                        "path reappeared as symlink after quarantine move: {}",
+                        target.display()
+                    ),
+                ));
+            }
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!(
+                    "path unexpectedly exists after quarantine move: {}",
+                    target.display()
+                ),
+            ));
+        }
+
         let honeypot = render_honeypot(target, &dest, result);
         fs::write(target, honeypot)?;
+        if fsutil::is_symlink(target)? {
+            let _ = fs::remove_file(target);
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "honeypot path became a symlink; removed and aborted",
+            ));
+        }
         bump_mtime_future(target, Duration::from_secs(10))?;
         Ok(dest)
     }

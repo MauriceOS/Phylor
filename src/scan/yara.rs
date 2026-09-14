@@ -65,6 +65,16 @@ fn rules() -> &'static [Rule] {
                     severity: "High",
                     check: detect_obfuscated,
                 },
+                Rule {
+                    id: "Phylor_Detect_Mcp_Command_Injection",
+                    severity: "Critical",
+                    check: detect_mcp_command_injection,
+                },
+                Rule {
+                    id: "Phylor_Detect_Remote_Hydration",
+                    severity: "High",
+                    check: detect_remote_hydration,
+                },
             ]
         })
         .as_slice()
@@ -163,4 +173,39 @@ fn detect_obfuscated(content: &str) -> bool {
         return true;
     }
     lower.contains("mkdir -p /tmp/.")
+}
+
+/// MCP server configs that embed shell/eval payloads in command/args.
+fn detect_mcp_command_injection(content: &str) -> bool {
+    if !content.contains("mcpServers") {
+        return false;
+    }
+
+    static DANGER: OnceLock<Regex> = OnceLock::new();
+    let danger = DANGER.get_or_init(|| {
+        Regex::new(
+            r#"(?i)(-e"|--eval"|child_process|curl[^\n|]*\|\s*(bash|sh|zsh)|wget[^\n|]*\|\s*(bash|sh|zsh)|/dev/tcp/|powershell\s+-enc|Invoke-Expression)"#,
+        )
+        .unwrap()
+    });
+    danger.is_match(content)
+}
+
+/// Skills that pull remote text and inject it into agent context.
+fn detect_remote_hydration(content: &str) -> bool {
+    static REMOTE: OnceLock<Regex> = OnceLock::new();
+    static INJECT: OnceLock<Regex> = OnceLock::new();
+    let remote = REMOTE.get_or_init(|| {
+        Regex::new(
+            r#"(?i)(https?://[^\s)\]"']+|pastebin\.com|gist\.github|raw\.githubusercontent)"#,
+        )
+        .unwrap()
+    });
+    let inject = INJECT.get_or_init(|| {
+        Regex::new(
+            r"(?i)(append\s+(it\s+)?to\s+(your\s+)?(system\s+)?context|fetch\s+the\s+latest|download\s+(and\s+)?(run|execute|follow)|treat\s+(the\s+)?(response|content)\s+as\s+(instructions|rules)|load\s+(remote|external)\s+(skill|prompt|config))",
+        )
+        .unwrap()
+    });
+    remote.is_match(content) && inject.is_match(content)
 }

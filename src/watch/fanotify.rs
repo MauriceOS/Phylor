@@ -1,6 +1,6 @@
 #![cfg(target_os = "linux")]
 
-use crate::pipeline::{is_skill_file, Pipeline};
+use crate::pipeline::{is_watched_file, Pipeline};
 use libc::{
     fanotify_event_metadata, fanotify_init, fanotify_mark, fanotify_response, FAN_ALLOW,
     FAN_CLASS_CONTENT, FAN_CLOEXEC, FAN_DENY, FAN_MARK_ADD, FAN_OPEN_PERM, O_CLOEXEC, O_RDONLY,
@@ -89,7 +89,7 @@ unsafe fn handle_open_perm(
 
     let path = resolve_path(meta.fd);
     if let Some(ref p) = path {
-        if !is_skill_file(p) {
+        if !is_watched_file(p) {
             let _ = reply(fan_file, meta.fd, true);
             libc::close(meta.fd);
             return;

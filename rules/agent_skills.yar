@@ -68,3 +68,35 @@ rule Phylor_Detect_Agent_Tool_Exfil {
     condition:
         any of ($tool_read*) and any of ($target*) and (any of ($tool_net*) or $url)
 }
+
+rule Phylor_Detect_Mcp_Command_Injection {
+    meta:
+        description = "Detects MCP server configs that embed shell or eval payloads"
+        author = "Phylor Security"
+        severity = "Critical"
+
+    strings:
+        $mcp = "mcpServers"
+        $eval = "-e" nocase
+        $child = "child_process" nocase
+        $curl_bash = /curl[^\n|]*\|\s*(bash|sh|zsh)/i
+
+    condition:
+        $mcp and ($child or $curl_bash or $eval)
+}
+
+rule Phylor_Detect_Remote_Hydration {
+    meta:
+        description = "Detects skills that fetch remote content into agent context"
+        author = "Phylor Security"
+        severity = "High"
+
+    strings:
+        $url = /https?:\/\//i
+        $paste = "pastebin.com" nocase
+        $append = /append\s+(it\s+)?to\s+(your\s+)?(system\s+)?context/i
+        $fetch = /fetch\s+the\s+latest/i
+
+    condition:
+        ($url or $paste) and ($append or $fetch)
+}
