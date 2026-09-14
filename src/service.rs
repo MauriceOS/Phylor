@@ -7,8 +7,8 @@ use std::process::Command;
 pub fn install_user_service(kernel: bool) -> anyhow::Result<PathBuf> {
     if kernel {
         anyhow::bail!(
-            "kernel mode (--kernel) requires platform-specific elevated install; \
-             use `phylor daemon --fanotify` under root on Linux for now"
+            "--kernel is not implemented for automatic install; \
+             on Linux, build with --features fanotify and run: sudo phylor daemon --fanotify"
         );
     }
 

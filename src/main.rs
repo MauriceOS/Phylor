@@ -11,7 +11,7 @@ use tracing::{info, warn, Level};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
-#[command(name = "phylor", about = "Pre-execution guardrail for AI agent skills")]
+#[command(name = "phylor", about = "Pre-execution guardrail for AI agent skills and MCP configs")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -28,9 +28,9 @@ enum Commands {
     /// Register Phylor as a user-level background service
     #[command(subcommand)]
     Service(ServiceCmd),
-    /// Start the user-space filesystem watcher (optional Linux fanotify)
+    /// Start the background file watcher
     Daemon {
-        /// Linux-only experimental kernel interceptor (requires root)
+        /// Use Linux fanotify open-permission events (requires CAP_SYS_ADMIN)
         #[arg(long)]
         fanotify: bool,
     },
@@ -59,9 +59,9 @@ enum Commands {
 
 #[derive(Subcommand, Debug)]
 enum ServiceCmd {
-    /// Install user service (systemd --user / LaunchAgent / Task Scheduler)
+    /// Install a user-level background service
     Install {
-        /// Reserved for experimental kernel registration (not recommended)
+        /// Attempt elevated kernel registration (Linux fanotify operators only)
         #[arg(long)]
         kernel: bool,
     },
@@ -124,7 +124,7 @@ fn main() -> anyhow::Result<ExitCode> {
             #[cfg(not(all(target_os = "linux", feature = "fanotify")))]
             if fanotify {
                 anyhow::bail!(
-                    "fanotify is experimental, Linux-only, and requires --features fanotify"
+                    "fanotify requires Linux and a build with --features fanotify"
                 );
             }
 

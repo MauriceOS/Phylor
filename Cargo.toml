@@ -2,7 +2,7 @@
 name = "phylor"
 version = "0.2.0"
 edition = "2021"
-description = "Pre-execution security guardrail for AI agent skill and rule files"
+description = "Pre-execution guardrail for AI agent skills, rules, and MCP configs"
 license = "MIT"
 readme = "README.md"
 keywords = ["security", "ai-agents", "cursor", "skills", "supply-chain"]

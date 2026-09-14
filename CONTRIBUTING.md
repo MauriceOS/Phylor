@@ -1,12 +1,12 @@
 # Contributing to Phylor
 
-Thanks for helping harden AI agent skill loading. This project is early (v0.2). Small, focused changes are easier to review than large rewrites.
+Phylor is at v0.2. Prefer small, reviewable changes.
 
 ## Before you start
 
 1. Open an issue for substantial features or architectural changes.
-2. Keep PRs scoped: one concern per PR when possible.
-3. Do not commit secrets, live malware samples outside `fixtures/`, or personal skill trees from your machine.
+2. Keep PRs scoped to one concern when possible.
+3. Do not commit secrets, live malware outside `fixtures/`, or personal skill trees.
 
 ## Setup
 
@@ -16,32 +16,32 @@ cd Phylor
 cargo test
 ```
 
-## What we need most
+## Priority areas
 
 - MCP and remote-hydration detections with low false-positive rates
 - `phylor exec` UX and CI packaging
-- Clear false-positive reports: OS, agent, redacted skill snippet, Phylor verdict
-- Tests for new rules under `fixtures/` and `tests/`
+- False-positive reports: OS, agent, redacted snippet, Phylor verdict
+- Fixture coverage under `fixtures/` and `tests/`
 
-When you change detection logic, update both:
+When changing detection logic, update both:
 
-- `rules/agent_skills.yar` (documentation / portable rule text)
-- `src/scan/yara.rs` (what the binary actually runs today)
+- `rules/agent_skills.yar`
+- `src/scan/yara.rs`
 
-Prefer user-space features (`exec`, `scan`, notify daemon) over kernel hooks unless you are extending the documented experimental fanotify path.
+Default contributions should target `exec`, `scan`, and the user-level watcher. Extend the Linux `fanotify` path only when that is the explicit goal of the change.
 
 ## Code style
 
-- Prefer clear Rust over clever Rust.
-- Avoid noisy comments that restate the code.
-- Match existing module boundaries (`pipeline`, `exec`, `watch`, `scan`, `enforce`).
+- Clear Rust over clever Rust
+- Comments only where intent is not obvious from the code
+- Follow existing module boundaries (`pipeline`, `exec`, `watch`, `scan`, `enforce`)
 
 ## Pull requests
 
-- Describe the threat or bug you are addressing.
-- Include `cargo test` results.
-- Note any platform you could not verify.
+- State the threat or bug addressed
+- Include `cargo test` results
+- Note platforms you could not verify
 
 ## Conduct
 
-Be respectful. Security research discussion is welcome; harassment and drive-by insult PRs are not.
+Be respectful. Security research discussion is welcome.
