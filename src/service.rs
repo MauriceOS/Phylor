@@ -1,6 +1,5 @@
 use crate::config::Config;
 use std::fs;
-use std::io;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -143,7 +142,7 @@ fn install_windows_task(exe: &std::path::Path) -> anyhow::Result<PathBuf> {
         .status()?;
 
     if !status.success() {
-        return Err(io::Error::new(io::ErrorKind::Other, "schtasks create failed").into());
+        anyhow::bail!("schtasks create failed");
     }
 
     fs::write(

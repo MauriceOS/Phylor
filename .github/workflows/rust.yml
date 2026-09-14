@@ -20,7 +20,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -33,3 +33,7 @@ jobs:
 
       - name: Test
         run: cargo test --locked
+
+      - name: Build with fanotify (Linux)
+        if: runner.os == 'Linux'
+        run: cargo build --locked --features fanotify

@@ -20,7 +20,8 @@ pub fn run_fanotify_daemon(
     watch_paths: Vec<PathBuf>,
 ) -> anyhow::Result<()> {
     unsafe {
-        let fan_fd = fanotify_init(FAN_CLASS_CONTENT | FAN_CLOEXEC, O_RDONLY | O_CLOEXEC);
+        let flags = (O_RDONLY | O_CLOEXEC) as u32;
+        let fan_fd = fanotify_init(FAN_CLASS_CONTENT | FAN_CLOEXEC, flags);
         if fan_fd < 0 {
             return Err(io::Error::last_os_error().into());
         }
