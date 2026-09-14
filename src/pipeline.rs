@@ -1,21 +1,34 @@
 use crate::alert;
+use crate::cache::{CachedVerdict, VerdictCache};
 use crate::config::Config;
 use crate::enforce::Enforcer;
 use crate::keywords;
+use crate::markdown;
 use crate::normalize;
 use crate::scan::{LlmJudge, ScanResult, Verdict, YaraEngine};
 use fs2::FileExt;
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 use tracing::{info, warn};
+
+/// Detection depth.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanMode {
+    /// Unicode, demarkdown, and static rules only. Used under fanotify.
+    Fast,
+    /// Fast path plus keyword gate and optional local LLM judge.
+    Full,
+}
 
 pub struct Pipeline {
     cfg: Config,
     yara: YaraEngine,
     llm: LlmJudge,
     enforcer: Enforcer,
+    cache: Mutex<VerdictCache>,
 }
 
 impl Pipeline {
@@ -29,11 +42,40 @@ impl Pipeline {
             yara,
             llm,
             enforcer,
+            cache: Mutex::new(VerdictCache::new(512)),
         })
     }
 
     pub fn scan_text(&self, content: &str) -> anyhow::Result<ScanResult> {
-        // 1. Unicode / stego (Policy A)
+        self.scan_text_with_mode(content, ScanMode::Full)
+    }
+
+    pub fn scan_text_fast(&self, content: &str) -> anyhow::Result<ScanResult> {
+        self.scan_text_with_mode(content, ScanMode::Fast)
+    }
+
+    pub fn scan_text_with_mode(&self, content: &str, mode: ScanMode) -> anyhow::Result<ScanResult> {
+        let digest = VerdictCache::hash(content.as_bytes());
+        if let Ok(mut cache) = self.cache.lock() {
+            if let Some(CachedVerdict::Allow) = cache.get(&digest) {
+                return Ok(ScanResult::safe());
+            }
+            // Cached blocks are revalidated so honeypot / policy changes still apply.
+        }
+
+        let result = self.inspect(content, mode)?;
+
+        if let Ok(mut cache) = self.cache.lock() {
+            // Only cache allow decisions and critical static blocks for fanotify speed.
+            if !result.is_block() || !result.used_llm {
+                cache.insert(digest, CachedVerdict::from(&result));
+            }
+        }
+
+        Ok(result)
+    }
+
+    fn inspect(&self, content: &str, mode: ScanMode) -> anyhow::Result<ScanResult> {
         let (clean, stego) = normalize::sanitize(content);
         if stego.is_malicious() {
             return Ok(ScanResult::blocked(
@@ -45,14 +87,17 @@ impl Pipeline {
             ));
         }
 
-        // 2. YARA static
-        let findings = self.yara.scan_text(&clean)?;
+        let plain = markdown::plaintext(&clean);
+        let findings = self.yara.scan_text(&plain)?;
 
         if YaraEngine::has_critical(&findings) {
             let rules: Vec<_> = findings.iter().map(|f| f.rule.clone()).collect();
             return Ok(ScanResult::blocked(
                 Verdict::Malicious,
-                rules.first().cloned().unwrap_or_else(|| "YARA Critical".into()),
+                rules
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "Static Critical".into()),
                 format!("critical static match: {}", rules.join(", ")),
                 findings,
                 false,
@@ -60,22 +105,36 @@ impl Pipeline {
         }
 
         if !findings.is_empty() {
-            return self.escalate_or_suspicious(
-                &clean,
-                findings,
-                "YARA High",
-                "static match",
-            );
+            if mode == ScanMode::Fast {
+                return Ok(ScanResult::blocked(
+                    Verdict::Suspicious,
+                    "Static High",
+                    format!(
+                        "static match: {}",
+                        findings
+                            .iter()
+                            .map(|f| f.rule.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                    findings,
+                    false,
+                ));
+            }
+            return self.escalate_or_suspicious(&plain, findings, "Static High", "static match");
         }
 
-        // 3. Keyword gate → optional LLM (even when YARA clean)
-        let hits = keywords::keyword_hits(&clean);
+        if mode == ScanMode::Fast {
+            return Ok(ScanResult::safe());
+        }
+
+        let hits = keywords::keyword_hits(&plain);
         if hits.is_empty() {
             return Ok(ScanResult::safe());
         }
 
         if self.llm.enabled() {
-            match self.llm.judge(&clean, &hits) {
+            match self.llm.judge(&plain, &hits) {
                 Ok((verdict, reason)) => {
                     if matches!(verdict, Verdict::Safe) {
                         return Ok(ScanResult {
@@ -117,7 +176,6 @@ impl Pipeline {
             ));
         }
 
-        // Fail-open: keywords alone without LLM confirmation
         Ok(ScanResult {
             verdict: Verdict::Safe,
             findings: Vec::new(),
@@ -193,23 +251,30 @@ impl Pipeline {
         let result = self.scan_text(&content)?;
 
         if result.is_block() {
-            let dest = self.enforcer.quarantine_and_honeypot(&path, &result)?;
-            if self.cfg.notifications {
-                alert::alert_block(&path, &result);
-            }
-            info!(
-                path = %path.display(),
-                quarantine = %dest.display(),
-                verdict = %result.verdict,
-                threat = %result.threat_type,
-                reason = %result.reason,
-                "blocked skill file"
-            );
+            self.enforce_block(&path, &result)?;
         } else {
             info!(path = %path.display(), verdict = %result.verdict, "allowed");
         }
 
         let _ = FileExt::unlock(&file);
+        Ok(())
+    }
+
+    /// Quarantine + honeypot + notification after a block decision.
+    /// Safe to call after fanotify FAN_DENY (never instead of DENY on the same open).
+    pub fn enforce_block(&self, path: &Path, result: &ScanResult) -> anyhow::Result<()> {
+        let dest = self.enforcer.quarantine_and_honeypot(path, result)?;
+        if self.cfg.notifications {
+            alert::alert_block(path, result);
+        }
+        info!(
+            path = %path.display(),
+            quarantine = %dest.display(),
+            verdict = %result.verdict,
+            threat = %result.threat_type,
+            reason = %result.reason,
+            "blocked skill file"
+        );
         Ok(())
     }
 

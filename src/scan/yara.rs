@@ -12,7 +12,6 @@ pub struct YaraEngine;
 
 impl YaraEngine {
     pub fn from_path(_path: &std::path::Path) -> Result<Self, ScanError> {
-        // Rules are compiled into the binary; .yar files remain the human-readable source.
         let _ = rules();
         Ok(Self)
     }
@@ -39,10 +38,6 @@ impl YaraEngine {
             .iter()
             .any(|f| f.severity.eq_ignore_ascii_case("critical"))
     }
-
-    pub fn is_inconclusive(findings: &[Finding]) -> bool {
-        !findings.is_empty() && !Self::has_critical(findings)
-    }
 }
 
 fn rules() -> &'static [Rule] {
@@ -59,6 +54,11 @@ fn rules() -> &'static [Rule] {
                     id: "Phylor_Detect_Credential_Exfiltration",
                     severity: "Critical",
                     check: detect_credential_exfil,
+                },
+                Rule {
+                    id: "Phylor_Detect_Agent_Tool_Exfil",
+                    severity: "Critical",
+                    check: detect_agent_tool_exfil,
                 },
                 Rule {
                     id: "Phylor_Detect_Obfuscated_Execution",
@@ -117,6 +117,34 @@ fn detect_credential_exfil(content: &str) -> bool {
         || exfil_dns.is_match(content);
 
     (tgt_count > 0 && exfil) || tgt_count >= 3
+}
+
+/// Natural-language coercion of agent tools: read secrets + network exfil.
+fn detect_agent_tool_exfil(content: &str) -> bool {
+    static TOOL_READ: OnceLock<Regex> = OnceLock::new();
+    static TOOL_NET: OnceLock<Regex> = OnceLock::new();
+    static TARGET: OnceLock<Regex> = OnceLock::new();
+
+    let tool_read = TOOL_READ.get_or_init(|| {
+        Regex::new(
+            r"(?i)\b(read_file|readfile|file_search|cat_file|read_config|read_text_file|get_file_contents)\b|\buse(?:\s+your)?\s+(?:native\s+)?`?(?:Read|ReadFile|Cat)`?\b",
+        )
+        .unwrap()
+    });
+    let tool_net = TOOL_NET.get_or_init(|| {
+        Regex::new(
+            r"(?i)\b(browser_action|fetch_web_page|fetchdocumentation|web_fetch|web_search|curl_url|http_get|http_request)\b|\buse(?:\s+your)?\s+(?:native\s+)?`?(?:WebFetch|WebSearch|FetchDocumentation|Browser)`?\b|https?://[^\s)]+",
+        )
+        .unwrap()
+    });
+    let target = TARGET.get_or_init(|| {
+        Regex::new(
+            r"(?i)(\.env|\.aws/credentials|id_rsa|id_ed25519|npmrc|application_default_credentials|\bapi[_ ]?key\b|\baccess[_ ]?token\b|\bstripe[_ ]?secret|\bSECRET_KEY\b)",
+        )
+        .unwrap()
+    });
+
+    tool_read.is_match(content) && tool_net.is_match(content) && target.is_match(content)
 }
 
 fn detect_obfuscated(content: &str) -> bool {

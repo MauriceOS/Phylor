@@ -28,7 +28,13 @@ pub struct LlmConfig {
     pub enabled: bool,
     pub endpoint: String,
     pub model: String,
-    pub timeout_secs: u64,
+    /// Hard ceiling for semantic judge HTTP calls (user-space / CLI only).
+    #[serde(default = "default_llm_timeout_ms")]
+    pub timeout_ms: u64,
+}
+
+fn default_llm_timeout_ms() -> u64 {
+    3_000
 }
 
 impl Default for Config {
@@ -53,7 +59,7 @@ impl Default for Config {
                 enabled: false,
                 endpoint: "http://127.0.0.1:11434".into(),
                 model: "llama-guard3".into(),
-                timeout_secs: 8,
+                timeout_ms: default_llm_timeout_ms(),
             },
             poll_interval_ms: 50,
             lock_retries: 20,

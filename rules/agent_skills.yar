@@ -52,3 +52,19 @@ rule Phylor_Detect_Obfuscated_Execution {
     condition:
         $b64_pipe or ($py_b64 and $py_exec) or $hidden_dir
 }
+
+rule Phylor_Detect_Agent_Tool_Exfil {
+    meta:
+        description = "Detects natural-language coercion of agent file and network tools for credential theft"
+        author = "Phylor Security"
+        severity = "Critical"
+
+    strings:
+        $tool_read = /(read_file|readfile|file_search|cat_file|read_config|ReadFile)/ nocase
+        $tool_net = /(browser_action|fetch_web_page|WebFetch|WebSearch|FetchDocumentation|http_get|curl_url)/ nocase
+        $target = /(\.env|\.aws\/credentials|id_rsa|api[_ ]?key|access[_ ]?token|SECRET_KEY)/ nocase
+        $url = /https?:\/\// nocase
+
+    condition:
+        any of ($tool_read*) and any of ($target*) and (any of ($tool_net*) or $url)
+}
