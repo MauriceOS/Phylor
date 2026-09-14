@@ -55,6 +55,12 @@ enum Commands {
     },
     /// Show resolved configuration
     Status,
+    /// List skill / rule / MCP files discovered in a workspace
+    Discover {
+        /// Workspace root (default: current directory)
+        #[arg(long)]
+        dir: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -90,6 +96,16 @@ fn main() -> anyhow::Result<ExitCode> {
             let cfg = Config::load()?;
             println!("{}", toml::to_string_pretty(&cfg)?);
             println!("rules = {}", cfg.resolve_rules_path().display());
+            Ok(ExitCode::SUCCESS)
+        }
+        Commands::Discover { dir } => {
+            let workspace = dir
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            let files = discover::collect_preflight_files(&workspace);
+            for path in &files {
+                println!("{}", path.display());
+            }
+            println!("discovered={}", files.len());
             Ok(ExitCode::SUCCESS)
         }
         Commands::Scan { path, enforce } => {
@@ -202,7 +218,11 @@ fn cmd_init(enforce: bool) -> anyhow::Result<()> {
     }
 
     let pipeline = Pipeline::new(cfg.clone())?;
-    let files = discover::collect_skill_files(&cfg.watch_paths);
+    let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut files = discover::collect_skill_files(&cfg.watch_paths);
+    files.extend(discover::collect_preflight_files(&workspace));
+    files.sort();
+    files.dedup();
     let mut blocked = 0usize;
     let mut scanned = 0usize;
 

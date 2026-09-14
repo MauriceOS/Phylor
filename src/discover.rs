@@ -1,6 +1,24 @@
 use crate::pipeline::is_watched_file;
 use std::path::{Path, PathBuf};
 
+const SKIP_DIRS: &[&str] = &[
+    "node_modules",
+    ".git",
+    "target",
+    "dist",
+    "build",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".next",
+    ".turbo",
+    "vendor",
+    ".idea",
+    ".vscode",
+    "coverage",
+    ".phylor",
+];
+
 pub fn discover_watch_paths() -> Vec<PathBuf> {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let mut paths = agent_home_roots(&home);
@@ -16,15 +34,25 @@ pub fn discover_watch_paths() -> Vec<PathBuf> {
     paths
 }
 
-/// Paths to preflight before launching an agent or IDE (`phylor exec`).
+/// Known agent roots plus a deep workspace walk for misplaced skill files.
 pub fn discover_preflight_roots(workspace: &Path) -> Vec<PathBuf> {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let mut roots = agent_workspace_roots(workspace);
     roots.extend(agent_home_roots(&home));
+    roots.push(workspace.to_path_buf());
     roots.retain(|p| p.exists());
     roots.sort();
     roots.dedup();
     roots
+}
+
+/// Collect watched files from known roots and by scanning the workspace tree.
+pub fn collect_preflight_files(workspace: &Path) -> Vec<PathBuf> {
+    let mut files = collect_skill_files(&discover_preflight_roots(workspace));
+    files.extend(scan_tree(workspace, 14));
+    files.sort();
+    files.dedup();
+    files
 }
 
 fn agent_home_roots(home: &Path) -> Vec<PathBuf> {
@@ -61,6 +89,8 @@ fn agent_workspace_roots(workspace: &Path) -> Vec<PathBuf> {
         workspace.join(".gemini"),
         workspace.join(".windsurf"),
         workspace.join(".opencode"),
+        workspace.join("skills"),
+        workspace.join(".skills"),
     ]
 }
 
@@ -73,15 +103,22 @@ pub fn collect_skill_files(roots: &[PathBuf]) -> Vec<PathBuf> {
             }
             continue;
         }
-        walk(root, &mut out, 0);
+        out.extend(scan_tree(root, 8));
     }
     out.sort();
     out.dedup();
     out
 }
 
-fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
-    if depth > 6 {
+/// Deep walk used for auto-discovery of skills outside conventional folders.
+pub fn scan_tree(root: &Path, max_depth: usize) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    walk(root, &mut out, 0, max_depth);
+    out
+}
+
+fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, max_depth: usize) {
+    if depth > max_depth {
         return;
     }
     let entries = match std::fs::read_dir(dir) {
@@ -99,10 +136,10 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
                 .and_then(|n| n.to_str())
                 .unwrap_or("")
                 .to_ascii_lowercase();
-            if name == "node_modules" || name == ".git" || name == "target" {
+            if SKIP_DIRS.iter().any(|s| *s == name) {
                 continue;
             }
-            walk(&path, out, depth + 1);
+            walk(&path, out, depth + 1, max_depth);
         } else if is_watched_file(&path) {
             out.push(path);
         }

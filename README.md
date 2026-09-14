@@ -14,7 +14,7 @@ Pre-execution guardrail for AI coding agent skills, rules, and MCP configs.
 
 Phylor inspects instruction files (`SKILL.md`, `.mdc` / rule files, MCP JSON, and related paths) for supply-chain payloads before they are loaded by coding agents such as **Cursor**, **Claude Code**, **Gemini CLI**, **Codex**, **Windsurf**, and OpenCode-compatible setups.
 
-**v0.2** — build from source. No hosted installer yet.
+**v0.2** — binaries are published on GitHub Releases; you can also build from source.
 
 ## How it works
 
@@ -44,7 +44,25 @@ Current limits include multi-file split payloads and fully dynamic remote stages
 - Rust **1.88+** (stable)
 - Optional: [Ollama](https://ollama.com) for semantic judging
 
-## Install (build from source)
+## Install
+
+### Prebuilt binaries (Windows, macOS, Linux)
+
+Download the archive for your platform from
+[GitHub Releases](https://github.com/MauriceOS/Phylor/releases):
+
+| Platform | Asset |
+| --- | --- |
+| Windows x64 | `phylor-x86_64-pc-windows-msvc.zip` → `phylor.exe` |
+| Linux x64 | `phylor-x86_64-unknown-linux-gnu.tar.gz` → `phylor` |
+| macOS Apple Silicon | `phylor-aarch64-apple-darwin.tar.gz` → `phylor` |
+| macOS Intel | `phylor-x86_64-apple-darwin.tar.gz` → `phylor` |
+
+Extract, place the binary on your `PATH`, then run `phylor init`.
+
+Releases are built automatically when a version tag is pushed (`v0.2.1`, etc.).
+
+### Build from source
 
 ```bash
 git clone https://github.com/MauriceOS/Phylor.git
@@ -52,18 +70,17 @@ cd Phylor
 cargo build --release
 ```
 
-Binary: `target/release/phylor` (`phylor.exe` on Windows).
+After building: `target/release/phylor` on macOS/Linux, or `target/release/phylor.exe` on Windows.
 
-### Windows
+### Windows (from source)
 
 ```powershell
 cargo build --release
 .\target\release\phylor.exe init
 .\target\release\phylor.exe exec -- cursor .
-# also: claude, gemini, codex, windsurf, or any other command
 ```
 
-### macOS / Linux
+### macOS / Linux (from source)
 
 ```bash
 cargo build --release
@@ -75,7 +92,7 @@ cargo build --release
 
 ## Supported agent layouts
 
-Phylor discovers common skill and config locations when they exist, including:
+Phylor checks known agent directories and also **walks the workspace** for high-confidence files even when they sit outside those folders (for example a nested `SKILL.md` under `vendor-tools/...`).
 
 | Agent / tool | Typical paths |
 | --- | --- |
@@ -86,13 +103,23 @@ Phylor discovers common skill and config locations when they exist, including:
 | Windsurf | `~/.windsurf/skills` |
 | OpenCode / agents | `~/.agents/skills`, `~/.config/opencode/skills`, project `.agents/` |
 
-Anything matching watched names (`SKILL.md`, `*.mdc`, `mcp.json`, `claude_desktop_config.json`, and related files) under those trees is eligible for scan, `init`, `exec` preflight, and the optional daemon.
+Watched names include `SKILL.md`, `*.mdc`, `mcp.json`, `claude_desktop_config.json`, `.cursorrules`, `CLAUDE.md`, `AGENTS.md`, and Markdown under skill/rules-style directories. Ordinary docs like `README.md` are ignored.
+
+List everything Phylor would scan:
+
+```bash
+phylor discover
+phylor discover --dir /path/to/project
+```
 ## Quick start
 
 ```bash
 # Discover paths, write ~/.phylor/config.toml, retroactive scan
 phylor init
 phylor init --enforce
+
+# See which skill/MCP files Phylor found (including odd paths)
+phylor discover
 
 # Preflight then launch (any agent CLI / IDE)
 phylor exec -- cursor .

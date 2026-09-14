@@ -304,16 +304,42 @@ pub fn is_skill_file(path: &Path) -> bool {
         || name == "agents.md"
         || name == "soul.md"
         || name == "memory.md"
+        || name == ".windsurfrules"
     {
         return true;
     }
 
-    matches!(
-        path.extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_ascii_lowercase()),
-        Some(ref e) if e == "md" || e == "mdc"
-    )
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
+
+    match ext.as_deref() {
+        Some("mdc") => true,
+        Some("md") => parent_suggests_agent_skill(path),
+        _ => false,
+    }
+}
+
+fn parent_suggests_agent_skill(path: &Path) -> bool {
+    path.components().any(|c| {
+        let s = c.as_os_str().to_string_lossy().to_ascii_lowercase();
+        matches!(
+            s.as_str(),
+            "skills"
+                | "rules"
+                | "commands"
+                | "agents"
+                | ".cursor"
+                | ".claude"
+                | ".codex"
+                | ".gemini"
+                | ".windsurf"
+                | ".agents"
+                | ".opencode"
+                | ".continue"
+        )
+    })
 }
 
 pub fn is_mcp_config(path: &Path) -> bool {

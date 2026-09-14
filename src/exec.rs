@@ -12,8 +12,7 @@ pub struct PreflightReport {
 }
 
 pub fn preflight(pipeline: &Pipeline, workspace: &Path, enforce: bool) -> anyhow::Result<PreflightReport> {
-    let roots = discover::discover_preflight_roots(workspace);
-    let files = discover::collect_skill_files(&roots);
+    let files = discover::collect_preflight_files(workspace);
     let mut blocked = Vec::new();
 
     for path in &files {
