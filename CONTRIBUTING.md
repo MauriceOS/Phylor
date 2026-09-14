@@ -11,7 +11,7 @@ Thanks for helping harden AI agent skill loading. This project is early (v0.1). 
 ## Setup
 
 ```bash
-git clone https://github.com/<owner>/Phylor.git
+git clone https://github.com/MauriceOS/Phylor.git
 cd Phylor
 cargo test
 ```

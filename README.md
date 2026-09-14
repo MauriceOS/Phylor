@@ -39,7 +39,7 @@ Phylor adds a local control point:
 ## Install (build from source)
 
 ```bash
-git clone https://github.com/<owner>/Phylor.git
+git clone https://github.com/MauriceOS/Phylor.git
 cd Phylor
 cargo build --release
 ```
