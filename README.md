@@ -1,5 +1,9 @@
 # Phylor
 
+<p align="center">
+  <img src="assets/phylor-banner.png" alt="Phylor" width="420" />
+</p>
+
 Pre-execution guardrail for AI coding agent skills, rules, and MCP configs.
 
 Phylor inspects instruction files (`SKILL.md`, `.mdc` rules, MCP JSON, and related paths) for supply-chain payloads before they are loaded by Cursor, Claude Code, and similar agents.
