@@ -1,9 +1,11 @@
 use clap::{Parser, Subcommand};
 use phylor::config::Config;
 use phylor::discover;
+use phylor::exec;
 use phylor::pipeline::Pipeline;
 use phylor::{service, watch};
 use std::path::PathBuf;
+use std::process::ExitCode;
 use std::sync::Arc;
 use tracing::{info, warn, Level};
 use tracing_subscriber::EnvFilter;
@@ -26,18 +28,30 @@ enum Commands {
     /// Register Phylor as a user-level background service
     #[command(subcommand)]
     Service(ServiceCmd),
-    /// Start the filesystem interceptor daemon
+    /// Start the user-space filesystem watcher (optional Linux fanotify)
     Daemon {
-        /// Use Linux fanotify permission events (requires root / CAP_SYS_ADMIN)
+        /// Linux-only experimental kernel interceptor (requires root)
         #[arg(long)]
         fanotify: bool,
     },
-    /// Scan a skill/rule file once and print the verdict
+    /// Scan a skill, rule, or MCP config file once
     Scan {
         path: PathBuf,
         /// Quarantine and replace with honeypot if blocked
         #[arg(long)]
         enforce: bool,
+    },
+    /// Preflight-scan the workspace (and common home skill paths), then run a command
+    Exec {
+        /// Quarantine blocked files before launch
+        #[arg(long)]
+        enforce: bool,
+        /// Workspace root to scan (default: current directory)
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// Command and arguments to run after a clean preflight
+        #[arg(required = true, trailing_var_arg = true, allow_hyphen_values = true)]
+        command: Vec<String>,
     },
     /// Show resolved configuration
     Status,
@@ -47,13 +61,13 @@ enum Commands {
 enum ServiceCmd {
     /// Install user service (systemd --user / LaunchAgent / Task Scheduler)
     Install {
-        /// Attempt kernel-level interceptor registration (elevated)
+        /// Reserved for experimental kernel registration (not recommended)
         #[arg(long)]
         kernel: bool,
     },
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<ExitCode> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
@@ -63,15 +77,20 @@ fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     match cli.command {
-        Commands::Init { enforce } => cmd_init(enforce)?,
+        Commands::Init { enforce } => {
+            cmd_init(enforce)?;
+            Ok(ExitCode::SUCCESS)
+        }
         Commands::Service(ServiceCmd::Install { kernel }) => {
             let path = service::install_user_service(kernel)?;
             info!(path = %path.display(), "service installed");
+            Ok(ExitCode::SUCCESS)
         }
         Commands::Status => {
             let cfg = Config::load()?;
             println!("{}", toml::to_string_pretty(&cfg)?);
             println!("rules = {}", cfg.resolve_rules_path().display());
+            Ok(ExitCode::SUCCESS)
         }
         Commands::Scan { path, enforce } => {
             let cfg = Config::load()?;
@@ -82,7 +101,13 @@ fn main() -> anyhow::Result<()> {
                 let dest = pipeline.enforcer().quarantine_and_honeypot(&path, &result)?;
                 println!("quarantined -> {}", dest.display());
             }
+            Ok(ExitCode::SUCCESS)
         }
+        Commands::Exec {
+            enforce,
+            dir,
+            command,
+        } => cmd_exec(enforce, dir, command),
         Commands::Daemon { fanotify } => {
             let cfg = Config::load()?;
             cfg.ensure_dirs()?;
@@ -92,19 +117,61 @@ fn main() -> anyhow::Result<()> {
 
             #[cfg(all(target_os = "linux", feature = "fanotify"))]
             if fanotify {
-                return watch::run_fanotify_daemon(pipeline, watch_paths);
+                watch::run_fanotify_daemon(pipeline, watch_paths)?;
+                return Ok(ExitCode::SUCCESS);
             }
 
             #[cfg(not(all(target_os = "linux", feature = "fanotify")))]
             if fanotify {
-                anyhow::bail!("fanotify requires Linux built with --features fanotify");
+                anyhow::bail!(
+                    "fanotify is experimental, Linux-only, and requires --features fanotify"
+                );
             }
 
             watch::run_notify_daemon(pipeline, watch_paths, poll_ms)?;
+            Ok(ExitCode::SUCCESS)
         }
     }
+}
 
-    Ok(())
+fn cmd_exec(enforce: bool, dir: Option<PathBuf>, command: Vec<String>) -> anyhow::Result<ExitCode> {
+    if command.is_empty() {
+        anyhow::bail!("exec requires a command, e.g. phylor exec -- cursor .");
+    }
+    let workspace = dir
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let cfg = Config::load()?;
+    let pipeline = Pipeline::new(cfg)?;
+    let report = exec::preflight(&pipeline, &workspace, enforce)?;
+
+    println!(
+        "preflight: scanned={} blocked={}",
+        report.scanned,
+        report.blocked.len()
+    );
+    for (path, result) in &report.blocked {
+        println!(
+            "  BLOCK {} [{}] {}",
+            path.display(),
+            result.threat_type,
+            result.reason
+        );
+    }
+
+    if !report.blocked.is_empty() && !enforce {
+        eprintln!("refusing to launch: threats found (re-run with --enforce to quarantine)");
+        return Ok(ExitCode::from(2));
+    }
+
+    let program = &command[0];
+    let args = &command[1..];
+    info!(program = %program, "launching");
+    let status = exec::run_command(program, &args.to_vec())?;
+    if status.success() {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::from(status.code().unwrap_or(1) as u8))
+    }
 }
 
 fn cmd_init(enforce: bool) -> anyhow::Result<()> {
@@ -162,10 +229,8 @@ fn cmd_init(enforce: bool) -> anyhow::Result<()> {
         }
     }
 
-    println!(
-        "init complete: scanned={scanned} blocked={blocked} enforce={enforce}"
-    );
-    println!("next: phylor service install   # user-level daemon");
-    println!("      phylor daemon            # run in foreground");
+    println!("init complete: scanned={scanned} blocked={blocked} enforce={enforce}");
+    println!("recommended: phylor exec -- <your-ide> .");
+    println!("optional:    phylor daemon");
     Ok(())
 }

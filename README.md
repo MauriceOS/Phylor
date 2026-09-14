@@ -1,51 +1,39 @@
 # Phylor
 
-Pre-execution guardrail for AI coding agent skills and rules.
+User-space pre-execution guardrail for AI coding agent skills, rules, and MCP configs.
 
-Phylor watches the directories where tools like Cursor, Claude Code, and similar agents load `SKILL.md`, `.mdc` rules, and related instruction files. When a new or modified file appears, Phylor inspects it **before it should be trusted**, and can quarantine malicious content so the agent does not execute supply-chain payloads hidden in Markdown.
+Phylor inspects instruction files (`SKILL.md`, `.mdc` rules, MCP JSON, and related paths) for supply-chain style payloads before you trust them in Cursor, Claude Code, or similar agents. The default workflow does **not** require root or a kernel driver.
 
-This is **v0.1** — clone, build, and run locally. There is no hosted installer yet.
+This is **v0.2** — clone, build, and run locally. There is no hosted installer yet.
 
-## Why it exists
+## Design stance
 
-Agent skills are plain Markdown with YAML front matter. They are treated as instructions, not as untrusted code. Traditional SAST tools largely ignore them. Attackers have already used malicious skills to push remote shell chains, credential theft, and invisible Unicode smuggling.
+Kernel file blockers (Linux `fanotify`, macOS Endpoint Security, Windows minifilters) are powerful but poorly suited to a portable open-source tool: they need elevated privileges or vendor entitlements, behave inconsistently in WSL2 and Dev Containers, and ask developers to trust a root daemon to protect an unprivileged IDE.
 
-Phylor adds a local control point:
+Phylor therefore centers on:
 
-1. Watch known skill/rule directories (or scan on demand)
-2. Sanitize steganographic Unicode and strip Markdown/HTML camouflage
-3. Match static patterns (shell chains, credential exfil, agent tool coercion)
-4. Optionally escalate ambiguous cases to a **local** LLM judge (Ollama; never under fanotify)
-5. Quarantine the original file and replace it with a honeypot
-6. Emit a desktop notification when something is blocked
+1. **`phylor exec`** — preflight-scan the workspace, then launch the IDE
+2. **`phylor scan` / `init`** — on-demand and retroactive checks
+3. **Optional user-level watcher** — best-effort notify daemon (no root)
+4. **Experimental Linux fanotify** — documented separately; not the default path
 
-## Threat coverage (v0.1)
+## What it detects
 
-| Layer | What it catches |
+| Layer | Coverage |
 | --- | --- |
-| Unicode / Policy A | Unicode Tags block (`U+E0000`–`U+E007F`), bidi spoofing, dense zero-width abuse |
-| Markdown plaintext | Emphasis/HTML fragmentation such as `c**u**r*l*` before static matching |
-| Static rules | Shell pipes, credential exfil, obfuscated decode chains, agent tool coercion |
-| Keyword gate + LLM | Ambiguous prompt injection when Ollama is enabled (CLI / notify daemon only) |
-| SHA-256 cache | Repeat opens of unchanged content short-circuit to allow |
-| Enforcement | Quarantine + honeypot + OS notification |
+| Unicode / Policy A | Tags block, bidi spoofing, dense zero-width abuse |
+| Markdown plaintext | Emphasis/HTML fragmentation before static matching |
+| Static rules | Shell pipes, credential exfil, obfuscation, agent tool coercion |
+| MCP configs | Dangerous `command` / `args` patterns (eval, `child_process`, `curl\|bash`) |
+| Remote hydration | Fetch remote text and inject it into agent context |
+| Optional LLM | Local Ollama judge for ambiguous prompt injection (CLI / notify only) |
 
-**Honest limits:** On Windows and macOS (and Linux without elevated fanotify), Phylor uses a filesystem watcher plus locking. That shrinks the race window; it does not eliminate it the way Linux `fanotify` `FAN_OPEN_PERM` can. Kernel mode is experimental and Linux-only.
-
-### Linux fanotify semantics
-
-When built with `--features fanotify` and run as root:
-
-1. Phylor's own PID is always allowed (prevents self-deadlock while writing honeypots).
-2. Content is read from the kernel-provided file descriptor only.
-3. Inspection uses the **fast** path (Unicode + demarkdown + static). No LLM while the opener is blocked.
-4. Threats receive `FAN_DENY` immediately. The honeypot is written **after** deny so the blocked `open()` never observes a swapped inode. The IDE's next open sees the honeypot after mtime update.
+**Known gaps:** multi-file split payloads, runtime tool proxying, and fully dynamic remote stages still need deeper gateway work. Phylor is a mitigation, not a sandbox.
 
 ## Requirements
 
 - Rust **1.88+** (stable)
-- Optional: [Ollama](https://ollama.com) if you want semantic judging
-- Optional (Linux kernel interceptor): root / `CAP_SYS_ADMIN` and build with `--features fanotify`
+- Optional: [Ollama](https://ollama.com) for semantic judging
 
 ## Install (build from source)
 
@@ -55,141 +43,119 @@ cd Phylor
 cargo build --release
 ```
 
-The binary is at `target/release/phylor` (or `phylor.exe` on Windows).
+Binary: `target/release/phylor` (`phylor.exe` on Windows).
 
-Add it to your `PATH`, or run it via `cargo run --release -- <command>`.
-
-### Platform notes
-
-**Windows**
+### Windows
 
 ```powershell
 cargo build --release
 .\target\release\phylor.exe init
-.\target\release\phylor.exe service install
-# or run in the foreground:
-.\target\release\phylor.exe daemon
+.\target\release\phylor.exe exec -- cursor .
 ```
 
-Uses the notify-based watcher and Windows toast notifications. Scheduled Task registration is attempted via `schtasks` on `service install`.
-
-**macOS**
+### macOS / Linux
 
 ```bash
 cargo build --release
 ./target/release/phylor init
-./target/release/phylor service install   # LaunchAgent
-./target/release/phylor daemon           # foreground
+./target/release/phylor exec -- cursor .
+# or: ./target/release/phylor exec -- claude
 ```
 
-**Linux**
+## Quick start
 
 ```bash
-cargo build --release
-./target/release/phylor init
-./target/release/phylor service install   # systemd --user
-./target/release/phylor daemon
+# Discover paths, write ~/.phylor/config.toml, retroactive scan
+phylor init
+phylor init --enforce
+
+# Recommended daily driver: preflight then launch
+phylor exec -- cursor .
+phylor exec --enforce -- cursor .
+
+# One-off scan (skills, rules, or MCP JSON)
+phylor scan path/to/SKILL.md
+phylor scan .cursor/mcp.json --enforce
+
+# Optional background watcher (user-level; no root)
+phylor daemon
 ```
 
-Kernel interceptor (experimental):
+`phylor exec` without `--enforce` exits with code `2` if threats are found and does not launch the command.
+
+## Configuration
+
+Default: `~/.phylor/config.toml`
+
+| Key | Meaning |
+| --- | --- |
+| `watch_paths` | Directories for the optional daemon |
+| `quarantine_dir` | Blocked originals (`~/.phylor/quarantine`) |
+| `notifications` | Desktop alerts on block |
+| `fail_closed_on_suspicious` | Quarantine keyword hits when LLM is unavailable |
+| `llm.enabled` | Local Ollama judging |
+| `llm.endpoint` | Default `http://127.0.0.1:11434` |
+| `llm.model` | Default `llama-guard3` |
+| `llm.timeout_ms` | Judge HTTP ceiling (default `3000`) |
+
+Scanning stays on-machine unless you point `llm.endpoint` elsewhere.
+
+## Enforcement safety
+
+Quarantine/honeypot refuses symbolic links and re-checks the path before write, reducing symlink TOCTOU hijacks during atomic swap. Symlinked “skills” are skipped by the watcher and reported as errors under `--enforce`.
+
+When a file is quarantined, Phylor writes a honeypot at the original path so the agent can warn the user in-chat. Originals remain under `~/.phylor/quarantine/`.
+
+## Optional Linux fanotify
 
 ```bash
 cargo build --release --features fanotify
 sudo ./target/release/phylor daemon --fanotify
 ```
 
-## Quick start
-
-```bash
-# 1) Discover agent skill paths, write ~/.phylor/config.toml, retroactive scan
-phylor init
-
-# Quarantine anything already malicious:
-phylor init --enforce
-
-# 2) Register a user-level background service (optional)
-phylor service install
-
-# 3) Or run the daemon in the foreground while developing Phylor itself
-phylor daemon
-```
-
-One-off scan:
-
-```bash
-phylor scan path/to/SKILL.md
-phylor scan path/to/SKILL.md --enforce
-```
-
-Show config:
-
-```bash
-phylor status
-```
-
-## Configuration
-
-Default config path: `~/.phylor/config.toml`
-
-Important knobs:
-
-| Key | Meaning |
-| --- | --- |
-| `watch_paths` | Directories monitored by the daemon |
-| `quarantine_dir` | Where blocked originals are moved (`~/.phylor/quarantine` by default) |
-| `notifications` | Desktop alerts on block |
-| `fail_closed_on_suspicious` | If `true`, keyword hits without LLM confirmation are quarantined |
-| `llm.enabled` | Turn on local Ollama judging (notify/CLI paths only) |
-| `llm.endpoint` | Default `http://127.0.0.1:11434` |
-| `llm.model` | Default `llama-guard3` |
-| `llm.timeout_ms` | Hard ceiling for judge HTTP calls (default `3000`) |
-
-Skills never leave your machine for scanning unless **you** point `llm.endpoint` at a remote service.
-
-## How blocking looks to the agent
-
-When Phylor quarantines a file, it writes a honeypot at the original path. The honeypot tells the agent to stop setup/network/credential actions and to inform the user that Phylor blocked a suspected supply-chain payload. Quarantined originals stay under `~/.phylor/quarantine/`.
+Experimental only. Requires `CAP_SYS_ADMIN`. Self-PID is allowed to avoid deadlocks; analysis uses the kernel FD; threats are `FAN_DENY`’d before honeypot write; the LLM is never invoked under the blocked open. Not available on macOS/Windows, and unreliable for many WSL/Dev Container layouts.
 
 ## Project layout
 
 ```
 Phylor/
-├── rules/agent_skills.yar   # Human-readable rule descriptions
-├── fixtures/                # Malicious and benign samples for tests
+├── rules/agent_skills.yar
+├── fixtures/
 ├── src/
-│   ├── pipeline.rs          # Detection cascade (fast vs full)
-│   ├── normalize.rs         # Unicode / stego sanitizer
-│   ├── markdown.rs          # Plaintext extraction for static scan
-│   ├── cache.rs             # SHA-256 allow/block LRU
-│   ├── keywords.rs          # Cheap LLM prefilter
+│   ├── exec.rs              # Preflight + IDE launch wrapper
+│   ├── pipeline.rs          # Detection cascade
+│   ├── discover.rs          # Skill / MCP path discovery
+│   ├── fsutil.rs            # Symlink-safe path checks
+│   ├── normalize.rs         # Unicode sanitizer
+│   ├── markdown.rs          # Plaintext extraction
+│   ├── cache.rs             # SHA-256 verdict LRU
 │   ├── scan/                # Static engine + optional Ollama judge
-│   ├── watch/               # notify daemon + Linux fanotify
+│   ├── watch/               # User-space watcher (+ optional fanotify)
 │   ├── enforce.rs           # Quarantine + honeypot
-│   ├── alert.rs             # Desktop notifications
-│   └── service.rs           # User service registration
-└── tests/                   # Integration tests over fixtures
+│   ├── alert.rs
+│   └── service.rs
+└── tests/
 ```
-
-The runtime static engine mirrors the intent of the `.yar` rules in-process (regex). That keeps builds light and Windows-friendly. Contributions to expand rules in both the `.yar` file and `src/scan/yara.rs` are welcome.
 
 ## Development
 
 ```bash
 cargo test
-cargo run -- scan fixtures/malicious_reverse_shell.md
+cargo run -- scan fixtures/malicious_mcp.json
+cargo run -- scan fixtures/malicious_remote_hydration.md
 cargo run -- scan fixtures/safe_skill.md
 ```
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Issues and PRs are welcome — especially rule coverage, platform service polish, and false-positive reports with redacted samples.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Useful areas: MCP coverage, false-positive reports with redacted samples, `phylor exec` UX, and CI packaging.
 
 ## Security
 
-If you believe you have found a vulnerability in Phylor itself, open a private security advisory on the GitHub repository (or email the maintainers listed there). Do not file public issues with working exploit details against Phylor until coordinated disclosure is done.
+Report Phylor vulnerabilities via a private GitHub security advisory. Do not open public issues with working exploits against Phylor until coordinated disclosure is complete.
 
-Phylor is a **mitigation**, not a guarantee. Keep agent auto-approve settings conservative, and treat third-party skills as untrusted input.
+Keep agent auto-approve settings conservative. Treat third-party skills and MCP servers as untrusted input.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Maurice Osoro.

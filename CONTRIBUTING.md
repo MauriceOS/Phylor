@@ -1,6 +1,6 @@
 # Contributing to Phylor
 
-Thanks for helping harden AI agent skill loading. This project is early (v0.1). Small, focused changes are easier to review than large rewrites.
+Thanks for helping harden AI agent skill loading. This project is early (v0.2). Small, focused changes are easier to review than large rewrites.
 
 ## Before you start
 
@@ -18,21 +18,23 @@ cargo test
 
 ## What we need most
 
-- Additional static detections with low false-positive rates
-- Platform service install fixes (systemd, LaunchAgent, Windows Task Scheduler)
+- MCP and remote-hydration detections with low false-positive rates
+- `phylor exec` UX and CI packaging
 - Clear false-positive reports: OS, agent, redacted skill snippet, Phylor verdict
 - Tests for new rules under `fixtures/` and `tests/`
 
 When you change detection logic, update both:
 
 - `rules/agent_skills.yar` (documentation / portable rule text)
-- `src/scan/yara.rs` (what the daemon actually runs today)
+- `src/scan/yara.rs` (what the binary actually runs today)
+
+Prefer user-space features (`exec`, `scan`, notify daemon) over kernel hooks unless you are extending the documented experimental fanotify path.
 
 ## Code style
 
 - Prefer clear Rust over clever Rust.
 - Avoid noisy comments that restate the code.
-- Match existing module boundaries (`pipeline`, `watch`, `scan`, `enforce`).
+- Match existing module boundaries (`pipeline`, `exec`, `watch`, `scan`, `enforce`).
 
 ## Pull requests
 

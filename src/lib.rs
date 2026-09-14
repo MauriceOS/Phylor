@@ -3,6 +3,8 @@ pub mod cache;
 pub mod config;
 pub mod discover;
 pub mod enforce;
+pub mod exec;
+pub mod fsutil;
 pub mod keywords;
 pub mod markdown;
 pub mod normalize;
