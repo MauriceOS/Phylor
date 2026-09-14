@@ -48,6 +48,9 @@ impl Default for Config {
                 home.join(".cursor").join("rules"),
                 home.join(".claude").join("skills"),
                 home.join(".agents").join("skills"),
+                home.join(".codex").join("skills"),
+                home.join(".gemini").join("skills"),
+                home.join(".windsurf").join("skills"),
             ];
         }
 

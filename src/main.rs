@@ -136,7 +136,7 @@ fn main() -> anyhow::Result<ExitCode> {
 
 fn cmd_exec(enforce: bool, dir: Option<PathBuf>, command: Vec<String>) -> anyhow::Result<ExitCode> {
     if command.is_empty() {
-        anyhow::bail!("exec requires a command, e.g. phylor exec -- cursor .");
+        anyhow::bail!("exec requires a command, e.g. phylor exec -- claude");
     }
     let workspace = dir
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
@@ -230,7 +230,9 @@ fn cmd_init(enforce: bool) -> anyhow::Result<()> {
     }
 
     println!("init complete: scanned={scanned} blocked={blocked} enforce={enforce}");
-    println!("recommended: phylor exec -- <your-ide> .");
+    println!("recommended: phylor exec -- <agent-or-ide> [args...]");
+    println!("examples:    phylor exec -- claude");
+    println!("             phylor exec -- cursor .");
     println!("optional:    phylor daemon");
     Ok(())
 }

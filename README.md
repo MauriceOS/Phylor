@@ -12,7 +12,7 @@
 
 Pre-execution guardrail for AI coding agent skills, rules, and MCP configs.
 
-Phylor inspects instruction files (`SKILL.md`, `.mdc` rules, MCP JSON, and related paths) for supply-chain payloads before they are loaded by Cursor, Claude Code, and similar agents.
+Phylor inspects instruction files (`SKILL.md`, `.mdc` / rule files, MCP JSON, and related paths) for supply-chain payloads before they are loaded by coding agents such as **Cursor**, **Claude Code**, **Gemini CLI**, **Codex**, **Windsurf**, and OpenCode-compatible setups.
 
 **v0.2** — build from source. No hosted installer yet.
 
@@ -20,7 +20,7 @@ Phylor inspects instruction files (`SKILL.md`, `.mdc` rules, MCP JSON, and relat
 
 Phylor runs in user space by default:
 
-1. **`phylor exec`** — scan the workspace, then launch the IDE
+1. **`phylor exec`** — scan the workspace, then launch your agent or IDE
 2. **`phylor scan` / `init`** — one-off and retroactive checks
 3. **`phylor daemon`** — optional background watcher (user-level)
 
@@ -60,6 +60,7 @@ Binary: `target/release/phylor` (`phylor.exe` on Windows).
 cargo build --release
 .\target\release\phylor.exe init
 .\target\release\phylor.exe exec -- cursor .
+# also: claude, gemini, codex, windsurf, or any other command
 ```
 
 ### macOS / Linux
@@ -67,10 +68,25 @@ cargo build --release
 ```bash
 cargo build --release
 ./target/release/phylor init
+./target/release/phylor exec -- claude
 ./target/release/phylor exec -- cursor .
-# or: ./target/release/phylor exec -- claude
+./target/release/phylor exec -- gemini
 ```
 
+## Supported agent layouts
+
+Phylor discovers common skill and config locations when they exist, including:
+
+| Agent / tool | Typical paths |
+| --- | --- |
+| Cursor | `~/.cursor/rules`, project `.cursor/`, `mcp.json` |
+| Claude Code | `~/.claude/skills`, project `.claude/`, Claude desktop MCP config |
+| Gemini CLI | `~/.gemini/skills` |
+| Codex | `~/.codex/skills` |
+| Windsurf | `~/.windsurf/skills` |
+| OpenCode / agents | `~/.agents/skills`, `~/.config/opencode/skills`, project `.agents/` |
+
+Anything matching watched names (`SKILL.md`, `*.mdc`, `mcp.json`, `claude_desktop_config.json`, and related files) under those trees is eligible for scan, `init`, `exec` preflight, and the optional daemon.
 ## Quick start
 
 ```bash
@@ -78,13 +94,16 @@ cargo build --release
 phylor init
 phylor init --enforce
 
-# Preflight then launch
+# Preflight then launch (any agent CLI / IDE)
 phylor exec -- cursor .
+phylor exec -- claude
+phylor exec -- gemini
 phylor exec --enforce -- cursor .
 
 # One-off scan (skills, rules, or MCP JSON)
 phylor scan path/to/SKILL.md
 phylor scan .cursor/mcp.json --enforce
+phylor scan ~/.claude/skills/some-skill/SKILL.md
 
 # Optional background watcher
 phylor daemon
@@ -137,9 +156,9 @@ Phylor/
 ├── rules/agent_skills.yar
 ├── fixtures/
 ├── src/
-│   ├── exec.rs              # Preflight + IDE launch
+│   ├── exec.rs              # Preflight + agent/IDE launch
 │   ├── pipeline.rs          # Detection cascade
-│   ├── discover.rs          # Skill / MCP path discovery
+│   ├── discover.rs          # Multi-agent skill / MCP path discovery
 │   ├── fsutil.rs            # Symlink-safe path checks
 │   ├── normalize.rs         # Unicode sanitizer
 │   ├── markdown.rs          # Plaintext extraction

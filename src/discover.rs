@@ -3,24 +3,11 @@ use std::path::{Path, PathBuf};
 
 pub fn discover_watch_paths() -> Vec<PathBuf> {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    let mut paths = vec![
-        home.join(".cursor").join("rules"),
-        home.join(".claude").join("skills"),
-        home.join(".agents").join("skills"),
-        home.join(".codex").join("skills"),
-        home.join(".gemini").join("skills"),
-        home.join(".windsurf").join("skills"),
-        home.join(".config").join("opencode").join("skills"),
-        home.join(".cursor"),
-        home.join(".claude"),
-    ];
+    let mut paths = agent_home_roots(&home);
 
     if let Ok(cwd) = std::env::current_dir() {
-        paths.push(cwd.join(".cursor").join("rules"));
-        paths.push(cwd.join(".claude").join("skills"));
-        paths.push(cwd.join(".agents").join("skills"));
-        paths.push(cwd.join(".cursor"));
-        paths.push(cwd.clone());
+        paths.extend(agent_workspace_roots(&cwd));
+        paths.push(cwd);
     }
 
     paths.retain(|p| p.exists());
@@ -29,23 +16,52 @@ pub fn discover_watch_paths() -> Vec<PathBuf> {
     paths
 }
 
-/// Paths to preflight before launching an IDE (`phylor exec`).
+/// Paths to preflight before launching an agent or IDE (`phylor exec`).
 pub fn discover_preflight_roots(workspace: &Path) -> Vec<PathBuf> {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    let mut roots = vec![
-        workspace.join(".cursor"),
-        workspace.join(".claude"),
-        workspace.join(".agents"),
-        home.join(".cursor").join("rules"),
-        home.join(".claude").join("skills"),
-        home.join(".agents").join("skills"),
-        home.join(".cursor"),
-        home.join(".claude"),
-    ];
+    let mut roots = agent_workspace_roots(workspace);
+    roots.extend(agent_home_roots(&home));
     roots.retain(|p| p.exists());
     roots.sort();
     roots.dedup();
     roots
+}
+
+fn agent_home_roots(home: &Path) -> Vec<PathBuf> {
+    vec![
+        home.join(".cursor").join("rules"),
+        home.join(".cursor"),
+        home.join(".claude").join("skills"),
+        home.join(".claude"),
+        home.join(".agents").join("skills"),
+        home.join(".codex").join("skills"),
+        home.join(".gemini").join("skills"),
+        home.join(".windsurf").join("skills"),
+        home.join(".config").join("opencode").join("skills"),
+        home.join("AppData")
+            .join("Roaming")
+            .join("Claude")
+            .join("claude_desktop_config.json"),
+        home.join("Library")
+            .join("Application Support")
+            .join("Claude")
+            .join("claude_desktop_config.json"),
+        home.join(".config")
+            .join("Claude")
+            .join("claude_desktop_config.json"),
+    ]
+}
+
+fn agent_workspace_roots(workspace: &Path) -> Vec<PathBuf> {
+    vec![
+        workspace.join(".cursor"),
+        workspace.join(".claude"),
+        workspace.join(".agents"),
+        workspace.join(".codex"),
+        workspace.join(".gemini"),
+        workspace.join(".windsurf"),
+        workspace.join(".opencode"),
+    ]
 }
 
 pub fn collect_skill_files(roots: &[PathBuf]) -> Vec<PathBuf> {
