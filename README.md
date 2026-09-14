@@ -4,6 +4,12 @@
   <img src="assets/phylor-banner.png" alt="Phylor" width="420" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/MauriceOS/Phylor/actions/workflows/rust.yml"><img src="https://github.com/MauriceOS/Phylor/actions/workflows/rust.yml/badge.svg" alt="CI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-1.88%2B-orange.svg" alt="Rust 1.88+" /></a>
+</p>
+
 Pre-execution guardrail for AI coding agent skills, rules, and MCP configs.
 
 Phylor inspects instruction files (`SKILL.md`, `.mdc` rules, MCP JSON, and related paths) for supply-chain payloads before they are loaded by Cursor, Claude Code, and similar agents.
@@ -86,6 +92,12 @@ phylor daemon
 
 Without `--enforce`, `phylor exec` exits with code `2` if threats are found and does not launch the command.
 
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Safe / clean (or launched command succeeded) |
+| `1` | Tool error (missing config, I/O failure, bad arguments) |
+| `2` | Threat detected; launch refused |
+
 ## Configuration
 
 Default: `~/.phylor/config.toml`
@@ -107,7 +119,7 @@ Content stays local unless you set `llm.endpoint` to a remote service.
 
 Quarantine and honeypot writes apply only to regular files. Symbolic links are refused to avoid TOCTOU path hijacks. The watcher skips symlinks; `--enforce` reports an error if asked to rewrite one.
 
-Blocked originals move to `~/.phylor/quarantine/`. A honeypot replaces the original path so the agent can notify the user in-chat.
+Blocked originals move to `~/.phylor/quarantine/`. Phylor then writes a honeypot at the original path: a short Markdown notice that instructs the agent not to run setup, network, or credential steps, and to tell the user that Phylor blocked a suspected supply-chain payload. That keeps the IDE from depending on a missing file while still surfacing the alert in chat.
 
 ## Linux fanotify (optional)
 

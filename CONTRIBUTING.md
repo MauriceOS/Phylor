@@ -23,6 +23,8 @@ cargo test
 - False-positive reports: OS, agent, redacted snippet, Phylor verdict
 - Fixture coverage under `fixtures/` and `tests/`
 
+Pull requests to `main` run `.github/workflows/rust.yml` (`cargo build --locked` and `cargo test --locked` on Linux, Windows, and macOS).
+
 When changing detection logic, update both:
 
 - `rules/agent_skills.yar`
